@@ -1,0 +1,519 @@
+{
+  "cached_at": "2026-05-02T23:48:40.931281",
+  "data": {
+    "repo_id": "91fec747-791d-4f36-b02c-431f570d99b9",
+    "session_id": "13ac7d3b-145c-45a8-b3b9-c53defe141c4",
+    "detected_stack": {
+      "languages": {
+        "Python": {
+          "count": 17,
+          "percentage": 100.0
+        }
+      },
+      "frameworks": [
+        {
+          "name": "FastAPI",
+          "type": "Framework",
+          "language": "Python"
+        },
+        {
+          "name": "Poetry/Modern Python",
+          "type": "Package Manager",
+          "language": "Python"
+        }
+      ],
+      "primary_language": "Python",
+      "primary_framework": "FastAPI",
+      "stack_summary": "Primary Language: Python | Primary Framework: FastAPI | Other Tools: Poetry/Modern Python"
+    },
+    "file_tree": [
+      {
+        "name": "agentic_rag",
+        "path": "agentic_rag",
+        "type": "directory"
+      },
+      {
+        "name": "agentic_rag",
+        "path": "agentic_rag\\agentic_rag",
+        "type": "directory"
+      },
+      {
+        "name": "app.py",
+        "path": "agentic_rag\\agentic_rag\\app.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 1170,
+        "content": "from fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel, Field\nfrom typing import List, Optional\nfrom .rag.config import Settings\nfrom .rag.pipeline import Pipeline\nimport json\nfrom pathlib import Path\n\nclass QueryIn(BaseModel):\n    question: str = Field(..., min_length=2)\n    top_k: Optional[int] = Field(default=None, ge=1, le=20)\n\nclass LoadIn(BaseModel):\n    documents: List[str]\n\ndef load_seed() -> list:\n    path = Path(__file__).parent / \"data\" / \"seed_documents.json\"\n    return json.loads(path.read_text(encoding=\"utf-8\"))\n\nsettings = Settings()\npipe = Pipeline(settings, seed_docs=load_seed())\n\napp = FastAPI(title=\"Agentic RAG API\", version=\"1.0.0\")\n\n@app.post(\"/query\")\ndef query(payload: QueryIn):\n    try:\n        out = pipe.answer(payload.question, top_k=payload.top_k)\n        return out\n    except Exception as e:\n        raise HTTPException(status_code=500, detail=f\"Failed to answer: {e}\")\n\n@app.post(\"/load\")\ndef load(payload: LoadIn):\n    try:\n        n = pipe.add_documents(payload.documents)\n        return {\"added\": n}\n    except Exception as e:\n        raise HTTPException(status_code=400, detail=f\"Failed to load docs: {e}\")\n",
+        "lines": 40
+      },
+      {
+        "name": "data",
+        "path": "agentic_rag\\agentic_rag\\data",
+        "type": "directory"
+      },
+      {
+        "name": "seed_documents.json",
+        "path": "agentic_rag\\agentic_rag\\data\\seed_documents.json",
+        "type": "file",
+        "extension": ".json",
+        "size": 199
+      },
+      {
+        "name": "rag",
+        "path": "agentic_rag\\agentic_rag\\rag",
+        "type": "directory"
+      },
+      {
+        "name": "agent.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\agent.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 2086,
+        "content": "from typing import List, Dict, Optional\nfrom .retriever import Retriever\nfrom .prompts import rag_prompt, reflection_prompt\nfrom .llm import LocalGenerator\n\nclass Agent:\n    def __init__(self, retriever: Retriever, generator: LocalGenerator, tools: Dict[str, object]):\n        self.retriever = retriever\n        self.generator = generator\n        self.tools = tools\n\n    def plan(self, question: str) -> str:\n        # Very small planner: choose retrieval by default; detect calculator intent\n        if any(tok in question.lower() for tok in [\"calculate\", \"compute\", \"+\", \"-\", \"*\", \"/\", \"^\"]):\n            return \"use_tool:calculator\"\n        return \"retrieve\"\n\n    def act(self, action: str, question: str, top_k: int) -> Dict[str, Optional[str]]:\n        obs = None\n        contexts: List[str] = []\n        try:\n            if action == \"retrieve\":\n                contexts = self.retriever.retrieve(question, top_k=top_k)\n                prompt = rag_prompt(contexts, question)\n                draft = self.generator.generate(prompt)\n                return {\"draft\": draft, \"observation\": None}\n            elif action.startswith(\"use_tool:\"):\n                _, tool_name = action.split(\":\", 1)\n                tool = self.tools.get(tool_name)\n                if tool is None:\n                    return {\"draft\": f\"Tool '{tool_name}' not available.\", \"observation\": None}\n                obs = tool.run(question)\n                prompt = f\"Observation from {tool_name}: {obs}\\n\\nQuestion: {question}\\nAnswer:\"\n                draft = self.generator.generate(prompt)\n                return {\"draft\": draft, \"observation\": obs}\n            else:\n                return {\"draft\": \"Unknown action.\", \"observation\": None}\n        except Exception as e:\n            return {\"draft\": f\"Error during action '{action}': {e}\", \"observation\": None}\n\n    def reflect(self, question: str, draft: str) -> str:\n        try:\n            prompt = reflection_prompt(question, draft)\n            return self.generator.generate(prompt)\n        except Exception:\n            return draft  # Fail-safe\n",
+        "lines": 47
+      },
+      {
+        "name": "config.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\config.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 467,
+        "content": "from pydantic import BaseModel, Field\nfrom typing import Optional\n\nclass Settings(BaseModel):\n    embedding_model_name: str = Field(default=\"all-MiniLM-L6-v2\")\n    generator_model_name: str = Field(default=\"google/flan-t5-small\")\n    top_k_default: int = Field(default=3, ge=1, le=20)\n    max_new_tokens: int = Field(default=128, ge=16, le=1024)\n    temperature: float = Field(default=0.7, ge=0.0, le=1.5)\n    seed: int = 42\n    # Future: add auth keys, device, etc.\n",
+        "lines": 12
+      },
+      {
+        "name": "embeddings.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\embeddings.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 552,
+        "content": "from typing import List\nimport numpy as np\nfrom sentence_transformers import SentenceTransformer\n\nclass Embeddings:\n    def __init__(self, model_name: str) -> None:\n        self.model = SentenceTransformer(model_name)\n\n    def encode(self, texts: List[str]) -> np.ndarray:\n        arr = self.model.encode(texts, convert_to_numpy=True).astype('float32')\n        if len(arr.shape) == 1:\n            arr = np.expand_dims(arr, axis=0)\n        return arr\n\n    @property\n    def dim(self) -> int:\n        return self.model.get_sentence_embedding_dimension()\n",
+        "lines": 18
+      },
+      {
+        "name": "llm.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\llm.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 514,
+        "content": "from transformers import pipeline\nfrom typing import Dict, Any, List\n\nclass LocalGenerator:\n    def __init__(self, model_name: str):\n        self.pipe = pipeline('text2text-generation', model=model_name)\n\n    def generate(self, prompt: str, max_new_tokens: int = 128, temperature: float = 0.7) -> str:\n        out = self.pipe(prompt, max_new_tokens=max_new_tokens, do_sample=True, temperature=temperature)\n        text = out[0].get('generated_text') or out[0].get('summary_text') or ''\n        return text.strip()\n",
+        "lines": 12
+      },
+      {
+        "name": "pipeline.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\pipeline.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 1726,
+        "content": "from typing import Dict, Any, List\nfrom .config import Settings\nfrom .embeddings import Embeddings\nfrom .vectorstore import VectorStore\nfrom .retriever import Retriever\nfrom .llm import LocalGenerator\nfrom .agent import Agent\nfrom .tools import CalculatorTool, TimeTool\nfrom .utils_logger import get_logger\nimport numpy as np\n\nlogger = get_logger(__name__)\n\nclass Pipeline:\n    def __init__(self, settings: Settings, seed_docs: List[str]):\n        self.settings = settings\n        self.embedder = Embeddings(settings.embedding_model_name)\n        self.store = VectorStore(self.embedder.dim)\n        self.generator = LocalGenerator(settings.generator_model_name)\n        self.retriever = Retriever(self.embedder, self.store)\n        tools = {\n            \"calculator\": CalculatorTool(),\n            \"time\": TimeTool(),\n        }\n        self.agent = Agent(self.retriever, self.generator, tools)\n        self.add_documents(seed_docs)\n\n    def add_documents(self, docs: List[str]) -> int:\n        if not docs:\n            return 0\n        embs = self.embedder.encode(docs)\n        self.store.add(docs, embs)\n        logger.info(\"Added %d documents. Total=%d\", len(docs), len(self.store.docs))\n        return len(docs)\n\n    def answer(self, question: str, top_k: int = None) -> Dict[str, Any]:\n        top_k = top_k or self.settings.top_k_default\n        plan = self.agent.plan(question)\n        logger.info(\"Plan: %s\", plan)\n        step = self.agent.act(plan, question, top_k)\n        draft = step.get(\"draft\", \"\")\n        final = self.agent.reflect(question, draft)\n        return {\n            \"plan\": plan,\n            \"draft\": draft,\n            \"final\": final,\n            \"observation\": step.get(\"observation\"),\n        }\n",
+        "lines": 49
+      },
+      {
+        "name": "prompts.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\prompts.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 680,
+        "content": "from typing import List\n\ndef rag_prompt(contexts: List[str], question: str) -> str:\n    context = \"\\n\".join(f\"- {c}\" for c in contexts) if contexts else \"No context.\"\n    return f\"\"\"You are a helpful assistant that answers using the provided context.\nIf you don't know, say so briefly.\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:\n\"\"\"\n\ndef reflection_prompt(question: str, draft: str) -> str:\n    return f\"\"\"You wrote the following draft answer:\n---\n{draft}\n---\nDouble-check for hallucinations or unsupported claims. If something lacks support\nfrom the context, tone it down or say you don't know. Provide a concise, corrected answer.\n\nQuestion: {question}\nFinal Answer:\n\"\"\"\n",
+        "lines": 26
+      },
+      {
+        "name": "retriever.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\retriever.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 432,
+        "content": "from typing import List\nfrom .embeddings import Embeddings\nfrom .vectorstore import VectorStore\n\nclass Retriever:\n    def __init__(self, embedder: Embeddings, store: VectorStore):\n        self.embedder = embedder\n        self.store = store\n\n    def retrieve(self, query: str, top_k: int) -> List[str]:\n        q = self.embedder.encode([query])\n        _, _, docs = self.store.search(q, top_k)\n        return docs[0] if docs else []\n",
+        "lines": 14
+      },
+      {
+        "name": "tools.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\tools.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 703,
+        "content": "from typing import Any, Dict\nfrom datetime import datetime\n\nclass CalculatorTool:\n    name = \"calculator\"\n    description = \"Evaluate a basic Python arithmetic expression, e.g. '2*(3+4)'.\"\n\n    def run(self, expression: str) -> str:\n        allowed = {k: v for k, v in vars(__builtins__).items() if k in ('abs','round')}\n        try:\n            result = eval(expression, {'__builtins__': allowed}, {})\n            return str(result)\n        except Exception as e:\n            return f\"Calculator error: {e}\"\n\nclass TimeTool:\n    name = \"time\"\n    description = \"Return current date-time as ISO string.\"\n    def run(self, _: str = '') -> str:\n        return datetime.now().isoformat(timespec='seconds')\n",
+        "lines": 21
+      },
+      {
+        "name": "utils_logger.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\utils_logger.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 400,
+        "content": "import logging\nfrom logging import Logger\n\ndef get_logger(name: str) -> Logger:\n    logger = logging.getLogger(name)\n    if not logger.handlers:\n        handler = logging.StreamHandler()\n        fmt = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')\n        handler.setFormatter(fmt)\n        logger.addHandler(handler)\n        logger.setLevel(logging.INFO)\n    return logger\n",
+        "lines": 13
+      },
+      {
+        "name": "vectorstore.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\vectorstore.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 664,
+        "content": "from typing import List, Tuple\nimport faiss\nimport numpy as np\n\nclass VectorStore:\n    def __init__(self, dim: int):\n        self.index = faiss.IndexFlatL2(dim)\n        self.docs: List[str] = []\n\n    def add(self, texts: List[str], embeddings: np.ndarray) -> None:\n        assert embeddings.shape[0] == len(texts)\n        self.index.add(embeddings)\n        self.docs.extend(texts)\n\n    def search(self, query_emb: np.ndarray, k: int) -> Tuple[np.ndarray, np.ndarray, List[str]]:\n        distances, idx = self.index.search(query_emb, k)\n        retrieved = [[self.docs[i] for i in row if i < len(self.docs)] for row in idx]\n        return distances, idx, retrieved\n",
+        "lines": 19
+      },
+      {
+        "name": "__init__.py",
+        "path": "agentic_rag\\agentic_rag\\rag\\__init__.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 0,
+        "content": "",
+        "lines": 1
+      },
+      {
+        "name": "__init__.py",
+        "path": "agentic_rag\\agentic_rag\\__init__.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 0,
+        "content": "",
+        "lines": 1
+      },
+      {
+        "name": "pyproject.toml",
+        "path": "agentic_rag\\pyproject.toml",
+        "type": "file",
+        "extension": ".toml",
+        "size": 61
+      },
+      {
+        "name": "README.md",
+        "path": "agentic_rag\\README.md",
+        "type": "file",
+        "extension": ".md",
+        "size": 2091
+      },
+      {
+        "name": "requirements.txt",
+        "path": "agentic_rag\\requirements.txt",
+        "type": "file",
+        "extension": ".txt",
+        "size": 95
+      },
+      {
+        "name": "tests",
+        "path": "agentic_rag\\tests",
+        "type": "directory"
+      },
+      {
+        "name": "test_agent.py",
+        "path": "agentic_rag\\tests\\test_agent.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 264,
+        "content": "from agentic_rag.rag.config import Settings\nfrom agentic_rag.rag.pipeline import Pipeline\n\ndef test_calculator_tool():\n    pipe = Pipeline(Settings(), seed_docs=[])\n    out = pipe.answer(\"calculate 2*(3+4)\")\n    assert \"14\" in out[\"final\"] or \"14\" in out[\"draft\"]\n",
+        "lines": 8
+      },
+      {
+        "name": "test_api.py",
+        "path": "agentic_rag\\tests\\test_api.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 471,
+        "content": "import pytest\nfrom fastapi.testclient import TestClient\nfrom agentic_rag.app import app\n\nclient = TestClient(app)\n\ndef test_query_endpoint():\n    r = client.post('/query', json={'question':'What is RAG?','top_k':2})\n    assert r.status_code == 200\n    payload = r.json()\n    assert 'final' in payload\n\ndef test_load_endpoint():\n    r = client.post('/load', json={'documents':['A new fact appears.']})\n    assert r.status_code == 200\n    assert r.json().get('added') == 1\n",
+        "lines": 17
+      },
+      {
+        "name": "test_retriever.py",
+        "path": "agentic_rag\\tests\\test_retriever.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 347,
+        "content": "from agentic_rag.rag.config import Settings\nfrom agentic_rag.rag.pipeline import Pipeline\n\ndef test_retriever_basic():\n    pipe = Pipeline(Settings(), seed_docs=[\n        \"RAG stands for Retrieval Augmented Generation.\",\n        \"The sky is blue.\"\n    ])\n    res = pipe.answer(\"What does RAG stand for?\", top_k=2)\n    assert \"RAG\" in res[\"final\"]\n",
+        "lines": 11
+      },
+      {
+        "name": "__init__.py",
+        "path": "agentic_rag\\__init__.py",
+        "type": "file",
+        "extension": ".py",
+        "size": 0,
+        "content": "",
+        "lines": 1
+      }
+    ],
+    "stats": {
+      "total_files": 21,
+      "total_dirs": 5,
+      "total_size": 12922,
+      "file_types": {
+        ".py": 17,
+        ".json": 1,
+        ".toml": 1,
+        ".md": 1,
+        ".txt": 1
+      }
+    },
+    "project_summary": "This is a Python FastAPI backend API. FastAPI is a modern, fast web framework that uses Python type hints for automatic validation and documentation. The code uses async/await for better performance and Pydantic models for data validation.",
+    "architecture_flow": [
+      "Client Request",
+      "API Route",
+      "Business Logic",
+      "Database/External API",
+      "Response"
+    ],
+    "concepts_detected": [
+      {
+        "name": "Type Hints",
+        "count": 55,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py",
+          "agentic_rag\\agentic_rag\\rag\\agent.py",
+          "agentic_rag\\agentic_rag\\rag\\config.py",
+          "agentic_rag\\agentic_rag\\rag\\embeddings.py",
+          "agentic_rag\\agentic_rag\\rag\\llm.py",
+          "agentic_rag\\agentic_rag\\rag\\pipeline.py",
+          "agentic_rag\\agentic_rag\\rag\\prompts.py",
+          "agentic_rag\\agentic_rag\\rag\\retriever.py",
+          "agentic_rag\\agentic_rag\\rag\\tools.py",
+          "agentic_rag\\agentic_rag\\rag\\utils_logger.py",
+          "agentic_rag\\agentic_rag\\rag\\vectorstore.py"
+        ],
+        "weight": 6,
+        "category": "Best Practice",
+        "description": "Adds type information to Python code"
+      },
+      {
+        "name": "Exception Handling",
+        "count": 12,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py",
+          "agentic_rag\\agentic_rag\\rag\\agent.py",
+          "agentic_rag\\agentic_rag\\rag\\tools.py"
+        ],
+        "weight": 8,
+        "category": "Error Handling",
+        "description": "Handles errors and exceptions"
+      },
+      {
+        "name": "Data Validation",
+        "count": 7,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py",
+          "agentic_rag\\agentic_rag\\rag\\config.py"
+        ],
+        "weight": 8,
+        "category": "Validation",
+        "description": "Validates and serializes data"
+      },
+      {
+        "name": "API Route",
+        "count": 2,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py"
+        ],
+        "weight": 6,
+        "category": "API",
+        "description": "Defines API endpoints"
+      },
+      {
+        "name": "FastAPI App",
+        "count": 1,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py"
+        ],
+        "weight": 10,
+        "category": "Framework",
+        "description": "Modern Python web framework"
+      },
+      {
+        "name": "Database ORM",
+        "count": 1,
+        "files": [
+          "agentic_rag\\agentic_rag\\app.py"
+        ],
+        "weight": 8,
+        "category": "Data Access",
+        "description": "Object-Relational Mapping for databases"
+      }
+    ],
+    "enriched_concepts": [
+      {
+        "concept": "API Route",
+        "where_used": [
+          "agentic_rag\\agentic_rag\\app.py"
+        ],
+        "usage_count": 2,
+        "category": "API",
+        "weight": 6,
+        "official_source_name": "FastAPI Official Documentation",
+        "official_source_url": "https://fastapi.tiangolo.com/tutorial/path-params/",
+        "official_docs_summary": "Path Parameters\n\u00b6\nYou can declare path \"parameters\" or \"variables\" with the same syntax used by Python format strings:\nPython 3.10+\nfrom\nfastapi\nimport\nFastAPI\napp\n=\nFastAPI\n()\n@app\n.\nget\n(\n\"/items/\n{item_id}\n\"\n)\nasync\ndef\nread_item\n(\nitem_id\n):\nreturn\n{\n\"item_id\"\n:\nitem_id\n}\nThe value of the path parameter\nitem_id\nwill be passed to your function as the argument\nitem_id\n.\nSo, if you run this example and go to\nhttp://127.0.0.1:8000/items/foo\n, you will see a response of:\n{\n\"item_id\"\n:\n\"foo\"\n}\nPat...",
+        "key_points": [
+          "@app.get() for GET requests",
+          "@app.post() for POST requests",
+          "Path parameters in URL: /items/{item_id}",
+          "Query parameters: /items/?skip=0&limit=10"
+        ],
+        "senior_explanation": "This concept appears 2 times in your codebase. It's an important pattern to understand for working with this project.",
+        "why_it_matters_in_this_codebase": "While used less frequently (2 times), this concept is still important for specific features in your codebase.",
+        "common_junior_mistake": "Take time to understand this concept thoroughly before using it in production code.",
+        "debugging_tip": "Add logging at key points to trace execution flow. Check official documentation for common pitfalls.",
+        "production_concern": "Production: Add proper error handling, logging, monitoring, and testing. Consider performance and security implications.",
+        "mini_quiz": {
+          "question": "What is the main purpose of API Route in this codebase?",
+          "answer": "Review the official documentation and code examples to understand its role and best practices."
+        },
+        "cached": false,
+        "fallback": false
+      },
+      {
+        "concept": "FastAPI App",
+        "where_used": [
+          "agentic_rag\\agentic_rag\\app.py"
+        ],
+        "usage_count": 1,
+        "category": "Framework",
+        "weight": 10,
+        "official_source_name": "FastAPI Official Documentation",
+        "official_source_url": "https://fastapi.tiangolo.com/tutorial/first-steps/",
+        "official_docs_summary": "First Steps\n\u00b6\nThe simplest FastAPI file could look like this:\nPython 3.10+\nfrom\nfastapi\nimport\nFastAPI\napp\n=\nFastAPI\n()\n@app\n.\nget\n(\n\"/\"\n)\nasync\ndef\nroot\n():\nreturn\n{\n\"message\"\n:\n\"Hello World\"\n}\nCopy that to a file\nmain.py\n.\nRun the live server:\n$\n<font\ncolor\n=\n\"#4E9A06\"\n>fastapi</font>\ndev\n<span style=\"background-color:#009485\"><font color=\"#D3D7CF\"> FastAPI </font></span>  Starting development server \ud83d\ude80\nSearching for package file structure from directories\nwith <font color=\"#3465A4\">__init__.py...",
+        "key_points": [
+          "FastAPI() creates the application instance",
+          "Automatic data validation using Pydantic",
+          "Automatic interactive API docs at /docs",
+          "Built on Starlette and Pydantic"
+        ],
+        "senior_explanation": "This concept appears 1 times in your codebase. It's an important pattern to understand for working with this project.",
+        "why_it_matters_in_this_codebase": "While used less frequently (1 times), this concept is still important for specific features in your codebase.",
+        "common_junior_mistake": "Take time to understand this concept thoroughly before using it in production code.",
+        "debugging_tip": "Add logging at key points to trace execution flow. Check official documentation for common pitfalls.",
+        "production_concern": "Production: Add proper error handling, logging, monitoring, and testing. Consider performance and security implications.",
+        "mini_quiz": {
+          "question": "What is the main purpose of FastAPI App in this codebase?",
+          "answer": "Review the official documentation and code examples to understand its role and best practices."
+        },
+        "cached": false,
+        "fallback": false
+      }
+    ],
+    "docs_matches": [],
+    "debugging_checklist": [
+      "Read the error message and stack trace carefully",
+      "Identify the file and line number where the error occurred",
+      "Check the values of variables at that point",
+      "Trace back to where those values came from",
+      "Add logging or debugging statements",
+      "Test with different inputs",
+      "Fix the issue and add a test to prevent regression"
+    ],
+    "learning_path": [
+      {
+        "name": "FastAPI App",
+        "weight": 10,
+        "priority": "High",
+        "description": "Modern Python web framework",
+        "category": "Framework"
+      },
+      {
+        "name": "Exception Handling",
+        "weight": 8,
+        "priority": "Medium",
+        "description": "Handles errors and exceptions",
+        "category": "Error Handling"
+      },
+      {
+        "name": "Data Validation",
+        "weight": 8,
+        "priority": "Medium",
+        "description": "Validates and serializes data",
+        "category": "Validation"
+      },
+      {
+        "name": "Database ORM",
+        "weight": 8,
+        "priority": "Medium",
+        "description": "Object-Relational Mapping for databases",
+        "category": "Data Access"
+      },
+      {
+        "name": "Type Hints",
+        "weight": 6,
+        "priority": "Medium",
+        "description": "Adds type information to Python code",
+        "category": "Best Practice"
+      },
+      {
+        "name": "API Route",
+        "weight": 6,
+        "priority": "Medium",
+        "description": "Defines API endpoints",
+        "category": "API"
+      }
+    ],
+    "quiz_questions": [
+      {
+        "question": "What is the purpose of exception handling?",
+        "answer": "To gracefully handle errors, prevent crashes, provide meaningful error messages, and maintain application stability."
+      },
+      {
+        "question": "What is the first step when debugging an error?",
+        "answer": "Read the error message carefully and identify the file and line number where the error occurred."
+      },
+      {
+        "question": "Why is code organization important?",
+        "answer": "Good organization makes code easier to understand, maintain, test, and scale. It follows the principle of separation of concerns."
+      }
+    ],
+    "understanding_debt_score": {
+      "score": 17.5,
+      "base_score": 17.5,
+      "skill_adjustment": 0,
+      "risk_level": "Low",
+      "risk_color": "green",
+      "message": "You have a good understanding of this codebase!",
+      "high_risk_concepts": [
+        {
+          "name": "FastAPI App",
+          "weight": 10,
+          "description": "Modern Python web framework",
+          "files": [
+            "agentic_rag\\agentic_rag\\app.py"
+          ]
+        }
+      ],
+      "concept_breakdown": [
+        {
+          "name": "Type Hints",
+          "weight": 6,
+          "count": 55,
+          "contribution": 6
+        },
+        {
+          "name": "Exception Handling",
+          "weight": 8,
+          "count": 12,
+          "contribution": 6.0
+        },
+        {
+          "name": "Data Validation",
+          "weight": 8,
+          "count": 7,
+          "contribution": 3.5
+        },
+        {
+          "name": "API Route",
+          "weight": 6,
+          "count": 2,
+          "contribution": 1.0
+        },
+        {
+          "name": "FastAPI App",
+          "weight": 10,
+          "count": 1,
+          "contribution": 0.5
+        },
+        {
+          "name": "Database ORM",
+          "weight": 8,
+          "count": 1,
+          "contribution": 0.5
+        }
+      ],
+      "total_concepts": 6,
+      "recommendation": "Great! Focus on code quality and best practices."
+    }
+  }
+}

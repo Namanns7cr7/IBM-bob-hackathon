@@ -1,0 +1,164 @@
+{
+  "cached_at": "2026-05-02T23:45:19.860321",
+  "data": {
+    "repo_id": "83ef0aee-7b2f-4581-b420-1c460278c5ad",
+    "session_id": "df2bd52c-f0ad-40b4-beaa-fb20a8c27ec8",
+    "detected_stack": {
+      "languages": {
+        "HTML": {
+          "count": 8,
+          "percentage": 88.9
+        },
+        "CSS": {
+          "count": 1,
+          "percentage": 11.1
+        }
+      },
+      "frameworks": [],
+      "primary_language": "HTML",
+      "primary_framework": null,
+      "stack_summary": "Primary Language: HTML"
+    },
+    "file_tree": [
+      {
+        "name": "html",
+        "path": "html",
+        "type": "directory"
+      },
+      {
+        "name": ".gitignore",
+        "path": "html\\.gitignore",
+        "type": "file",
+        "extension": "",
+        "size": 1210
+      },
+      {
+        "name": "analytics.html",
+        "path": "html\\analytics.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 24148
+      },
+      {
+        "name": "budget.html",
+        "path": "html\\budget.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 47370
+      },
+      {
+        "name": "cards.html",
+        "path": "html\\cards.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 23125
+      },
+      {
+        "name": "firebase.json",
+        "path": "html\\firebase.json",
+        "type": "file",
+        "extension": ".json",
+        "size": 131
+      },
+      {
+        "name": "index.html",
+        "path": "html\\index.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 28153
+      },
+      {
+        "name": "investments.html",
+        "path": "html\\investments.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 27547
+      },
+      {
+        "name": "styles.css",
+        "path": "html\\styles.css",
+        "type": "file",
+        "extension": ".css",
+        "size": 19568
+      },
+      {
+        "name": "transactions.html",
+        "path": "html\\transactions.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 28038
+      },
+      {
+        "name": "transfer.html",
+        "path": "html\\transfer.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 26587
+      },
+      {
+        "name": "yes",
+        "path": "html\\yes",
+        "type": "directory"
+      },
+      {
+        "name": "index.html",
+        "path": "html\\yes\\index.html",
+        "type": "file",
+        "extension": ".html",
+        "size": 4616
+      }
+    ],
+    "stats": {
+      "total_files": 11,
+      "total_dirs": 2,
+      "total_size": 230493,
+      "file_types": {
+        "": 1,
+        ".html": 8,
+        ".json": 1,
+        ".css": 1
+      }
+    },
+    "project_summary": "This is a HTML application using None. The codebase is organized into modules and follows standard patterns for the technology stack.",
+    "architecture_flow": [
+      "Input",
+      "Processing",
+      "Output"
+    ],
+    "concepts_detected": [],
+    "enriched_concepts": [],
+    "docs_matches": [],
+    "debugging_checklist": [
+      "Read the error message and stack trace carefully",
+      "Identify the file and line number where the error occurred",
+      "Check the values of variables at that point",
+      "Trace back to where those values came from",
+      "Add logging or debugging statements",
+      "Test with different inputs",
+      "Fix the issue and add a test to prevent regression"
+    ],
+    "learning_path": [],
+    "quiz_questions": [
+      {
+        "question": "What is the first step when debugging an error?",
+        "answer": "Read the error message carefully and identify the file and line number where the error occurred."
+      },
+      {
+        "question": "Why is code organization important?",
+        "answer": "Good organization makes code easier to understand, maintain, test, and scale. It follows the principle of separation of concerns."
+      }
+    ],
+    "understanding_debt_score": {
+      "score": 0,
+      "base_score": 0,
+      "skill_adjustment": -20,
+      "risk_level": "Low",
+      "risk_color": "green",
+      "message": "You have a good understanding of this codebase!",
+      "high_risk_concepts": [],
+      "concept_breakdown": [],
+      "total_concepts": 0,
+      "recommendation": "Great! Focus on code quality and best practices."
+    }
+  }
+}
