@@ -24,6 +24,7 @@ from official_docs_fetcher import OfficialDocsFetcher
 from docs_matcher import DocsMatcher
 from local_memory import LocalMemory
 from report_generator import ReportGenerator
+from git_cloner import GitCloner
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -50,6 +51,7 @@ debt_calculator = DebtScoreCalculator()
 docs_matcher = DocsMatcher()
 local_memory = LocalMemory()
 report_generator = ReportGenerator()
+git_cloner = GitCloner()
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
@@ -77,6 +79,12 @@ class FeatureWalkthroughRequest(BaseModel):
 
 class MemoryRequest(BaseModel):
     session_id: str
+
+
+class GitHubURLRequest(BaseModel):
+    github_url: str
+    skill_level: str = "intermediate"
+    goal: str = "learn"
 
 
 class UploadResponse(BaseModel):
@@ -138,6 +146,296 @@ async def upload_repo(file: UploadFile = File(...)):
         # Clean up on error
         shutil.rmtree(repo_path, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Error processing upload: {str(e)}")
+
+@app.post("/analyze-github-url")
+async def analyze_github_url(request: GitHubURLRequest):
+    """
+    Clone and analyze a GitHub repository from URL (like CodeWiki)
+    """
+    try:
+        # Clone the repository
+        clone_result = git_cloner.clone_repository(request.github_url)
+        
+        if not clone_result['success']:
+            raise HTTPException(status_code=400, detail="Failed to clone repository")
+        
+        repo_id = clone_result['session_id']
+        repo_path = Path(clone_result['repo_path'])
+        
+        # Check cache first
+        cache_key = cache_manager.generate_cache_key(
+            repo_id,
+            request.skill_level,
+            request.goal
+        )
+        
+        cached_result = cache_manager.get_cached_analysis(cache_key)
+        if cached_result:
+            cached_data = cached_result.get('data', {})
+            if cached_data:
+                cached_data['github_info'] = clone_result['repo_info']
+                cached_data['repo_stats'] = clone_result['stats']
+                return cached_data
+        
+        # Analyze the cloned repository (same as upload analysis)
+        analyzer = RepoAnalyzer(str(repo_path))
+        analysis_result = analyzer.analyze()
+        
+        detector = StackDetector(
+            str(repo_path),
+            analysis_result['file_tree'],
+            analysis_result['config_files']
+        )
+        stack_info = detector.detect()
+        
+        concept_detector = ConceptDetector(
+            analysis_result['source_files'],
+            stack_info['primary_language']
+        )
+        detected_concepts = concept_detector.detect()
+        
+        enriched_concepts = docs_matcher.match_concepts_to_docs(
+            detected_concepts,
+            request.skill_level
+        )
+        
+        debt_score = debt_calculator.calculate(
+            detected_concepts,
+            request.skill_level,
+            analysis_result['stats']['total_files']
+        )
+        
+        docs_matches = docs_retriever.get_docs_for_concepts(detected_concepts, limit=5)
+        
+        repo_summary = {
+            'detected_stack': stack_info,
+            'concepts_detected': detected_concepts,
+            'stats': analysis_result['stats']
+        }
+        
+        ai_insights = ai_reasoner.generate_learning_summary(
+            repo_summary,
+            request.skill_level,
+            request.goal
+        )
+        
+        quiz_questions = ai_reasoner.generate_quiz_questions(
+            detected_concepts,
+            request.skill_level
+        )
+        
+        learning_path = debt_calculator.get_learning_priority(detected_concepts)
+        
+        session_id = local_memory.create_session(
+            repo_id=repo_id,
+            repo_name=clone_result['repo_info']['full_name'],
+            skill_level=request.skill_level,
+            goal=request.goal
+        )
+        
+        result = {
+            "repo_id": repo_id,
+            "session_id": session_id,
+            "github_info": clone_result['repo_info'],
+            "repo_stats": clone_result['stats'],
+            "detected_stack": stack_info,
+            "file_tree": analysis_result['file_tree'][:100],
+            "stats": analysis_result['stats'],
+            "project_summary": ai_insights['project_summary'],
+            "architecture_flow": ai_insights['architecture_flow'],
+            "concepts_detected": detected_concepts[:15],
+            "enriched_concepts": enriched_concepts[:10],
+            "docs_matches": docs_matches,
+            "debugging_checklist": ai_insights['debugging_checklist'],
+            "learning_path": learning_path[:10],
+            "quiz_questions": quiz_questions,
+            "understanding_debt_score": debt_score
+        }
+        
+        cache_manager.save_analysis(cache_key, result)
+        
+        return result
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GitHub analysis error: {str(e)}")
+
+@app.get("/readme/{repo_id}")
+async def get_readme(repo_id: str):
+    """
+    Extract and return README content from repository
+    """
+    repo_path = UPLOAD_DIR / repo_id
+    
+    if not repo_path.exists():
+        raise HTTPException(status_code=404, detail="Repository not found")
+    
+    # Look for README files (case-insensitive)
+    readme_patterns = ['README.md', 'readme.md', 'Readme.md', 'README.MD', 
+                       'README.txt', 'readme.txt', 'README', 'readme']
+    
+    for pattern in readme_patterns:
+        for readme_file in repo_path.rglob(pattern):
+            try:
+                with open(readme_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    return {
+                        "content": content,
+                        "filename": readme_file.name,
+                        "path": str(readme_file.relative_to(repo_path))
+                    }
+            except Exception as e:
+                continue
+    
+
+@app.post("/search-code/{repo_id}")
+async def search_code(repo_id: str, query: str, file_pattern: str = "*"):
+    """
+    Search for code patterns in repository
+    """
+    repo_path = UPLOAD_DIR / repo_id
+    
+    if not repo_path.exists():
+        raise HTTPException(status_code=404, detail="Repository not found")
+    
+    try:
+        results = []
+        search_pattern = query.lower()
+        
+        # Search through files
+        for file_path in repo_path.rglob(file_pattern):
+            if file_path.is_file() and not any(part.startswith('.') for part in file_path.parts):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                        for line_num, line in enumerate(lines, 1):
+                            if search_pattern in line.lower():
+                                # Get context (2 lines before and after)
+                                start = max(0, line_num - 3)
+                                end = min(len(lines), line_num + 2)
+                                context = ''.join(lines[start:end])
+                                
+                                results.append({
+                                    'file': str(file_path.relative_to(repo_path)),
+                                    'line': line_num,
+                                    'content': line.strip(),
+                                    'context': context,
+                                    'match_count': line.lower().count(search_pattern)
+                                })
+                except:
+                    continue
+        
+        # Sort by relevance (match count)
+        results.sort(key=lambda x: x['match_count'], reverse=True)
+        
+        return {
+            'query': query,
+            'total_matches': len(results),
+            'results': results[:100]  # Limit to 100 results
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
+
+
+@app.get("/dependency-graph/{repo_id}")
+async def get_dependency_graph(repo_id: str):
+    """
+    Generate dependency graph for repository
+    """
+    repo_path = UPLOAD_DIR / repo_id
+    
+    if not repo_path.exists():
+        raise HTTPException(status_code=404, detail="Repository not found")
+    
+    try:
+        dependencies = {
+            'nodes': [],
+            'edges': [],
+            'stats': {}
+        }
+        
+        # Detect package files
+        package_files = {
+            'package.json': 'npm',
+            'requirements.txt': 'pip',
+            'pom.xml': 'maven',
+            'build.gradle': 'gradle',
+            'Cargo.toml': 'cargo',
+            'go.mod': 'go',
+            'Gemfile': 'bundler',
+            'composer.json': 'composer'
+        }
+        
+        for pkg_file, pkg_manager in package_files.items():
+            for file_path in repo_path.rglob(pkg_file):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        
+                        # Parse dependencies based on file type
+                        if pkg_file == 'package.json':
+                            import json
+                            data = json.loads(content)
+                            deps = {**data.get('dependencies', {}), **data.get('devDependencies', {})}
+                            for dep, version in deps.items():
+                                dependencies['nodes'].append({
+                                    'id': dep,
+                                    'label': dep,
+                                    'version': version,
+                                    'type': 'npm',
+                                    'category': 'dependency'
+                                })
+                        
+                        elif pkg_file == 'requirements.txt':
+                            for line in content.split('\n'):
+                                line = line.strip()
+                                if line and not line.startswith('#'):
+                                    parts = line.split('==')
+                                    dep = parts[0].strip()
+                                    version = parts[1].strip() if len(parts) > 1 else 'latest'
+                                    dependencies['nodes'].append({
+                                        'id': dep,
+                                        'label': dep,
+                                        'version': version,
+                                        'type': 'pip',
+                                        'category': 'dependency'
+                                    })
+                except:
+                    continue
+        
+        # Add project as root node
+        dependencies['nodes'].insert(0, {
+            'id': 'project',
+            'label': repo_id,
+            'type': 'project',
+            'category': 'root'
+        })
+        
+        # Create edges from project to dependencies
+        for node in dependencies['nodes'][1:]:
+            dependencies['edges'].append({
+                'from': 'project',
+                'to': node['id'],
+                'type': 'depends_on'
+            })
+        
+        # Calculate stats
+        dependencies['stats'] = {
+            'total_dependencies': len(dependencies['nodes']) - 1,
+            'npm_packages': len([n for n in dependencies['nodes'] if n.get('type') == 'npm']),
+            'pip_packages': len([n for n in dependencies['nodes'] if n.get('type') == 'pip']),
+        }
+        
+        return dependencies
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dependency graph error: {str(e)}")
+
+    raise HTTPException(status_code=404, detail="README not found in repository")
+
+
 
 
 @app.post("/analyze")

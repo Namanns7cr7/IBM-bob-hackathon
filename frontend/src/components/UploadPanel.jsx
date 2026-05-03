@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { uploadRepo, analyzeRepo } from '../api'
+import { uploadRepo, analyzeRepo, analyzeGitHubUrl } from '../api'
 
 function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
   const [file, setFile] = useState(null)
+  const [githubUrl, setGithubUrl] = useState('')
+  const [uploadMode, setUploadMode] = useState('file') // 'file' or 'github'
   const [skillLevel, setSkillLevel] = useState('intermediate')
   const [goal, setGoal] = useState('learn')
   const [error, setError] = useState(null)
@@ -19,8 +21,13 @@ function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
   }
 
   const handleAnalyze = async () => {
-    if (!file) {
+    if (uploadMode === 'file' && !file) {
       setError('Please select a file first')
+      return
+    }
+    
+    if (uploadMode === 'github' && !githubUrl) {
+      setError('Please enter a GitHub URL')
       return
     }
 
@@ -28,14 +35,20 @@ function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
     setError(null)
 
     try {
-      // Step 1: Upload repo
-      const uploadResponse = await uploadRepo(file)
-      const repoId = uploadResponse.repo_id
+      if (uploadMode === 'github') {
+        // Analyze GitHub URL directly
+        const analysisData = await analyzeGitHubUrl(githubUrl, skillLevel, goal)
+        onAnalysisComplete(analysisData, analysisData.repo_id)
+      } else {
+        // Step 1: Upload repo
+        const uploadResponse = await uploadRepo(file)
+        const repoId = uploadResponse.repo_id
 
-      // Step 2: Analyze repo
-      const analysisData = await analyzeRepo(repoId, skillLevel, goal)
-      
-      onAnalysisComplete(analysisData, repoId)
+        // Step 2: Analyze repo
+        const analysisData = await analyzeRepo(repoId, skillLevel, goal)
+        
+        onAnalysisComplete(analysisData, repoId)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Analysis failed. Please try again.')
       console.error('Analysis error:', err)
@@ -50,24 +63,72 @@ function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
         📤 Upload Codebase
       </h2>
 
-      {/* File Upload */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-          ZIP File
-        </label>
-        <input
-          type="file"
-          accept=".zip"
-          onChange={handleFileChange}
-          className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-300"
+      {/* Upload Mode Toggle */}
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setUploadMode('file')}
+          className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+            uploadMode === 'file'
+              ? 'bg-primary-600 text-white'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+          }`}
           disabled={loading}
-        />
-        {file && (
-          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-            ✓ {file.name}
-          </p>
-        )}
+        >
+          📁 Upload ZIP
+        </button>
+        <button
+          onClick={() => setUploadMode('github')}
+          className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+            uploadMode === 'github'
+              ? 'bg-primary-600 text-white'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+          }`}
+          disabled={loading}
+        >
+          🔗 GitHub URL
+        </button>
       </div>
+
+      {/* File Upload */}
+      {uploadMode === 'file' && (
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+            ZIP File
+          </label>
+          <input
+            type="file"
+            accept=".zip"
+            onChange={handleFileChange}
+            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-300"
+            disabled={loading}
+          />
+          {file && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              ✓ {file.name}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* GitHub URL Input */}
+      {uploadMode === 'github' && (
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+            GitHub Repository URL
+          </label>
+          <input
+            type="text"
+            value={githubUrl}
+            onChange={(e) => setGithubUrl(e.target.value)}
+            placeholder="https://github.com/username/repo"
+            className="input-field"
+            disabled={loading}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Example: https://github.com/facebook/react
+          </p>
+        </div>
+      )}
 
       {/* Skill Level */}
       <div className="mb-4">
@@ -114,7 +175,7 @@ function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
       {/* Analyze Button */}
       <button
         onClick={handleAnalyze}
-        disabled={!file || loading}
+        disabled={(uploadMode === 'file' && !file) || (uploadMode === 'github' && !githubUrl) || loading}
         className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
@@ -133,7 +194,9 @@ function UploadPanel({ onAnalysisComplete, loading, setLoading }) {
       {/* Info */}
       <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg">
         <p className="text-xs text-blue-800 dark:text-blue-200">
-          💡 <strong>Tip:</strong> Upload a ZIP file of your project. We'll analyze the structure, detect concepts, and create a personalized learning path.
+          💡 <strong>Tip:</strong> {uploadMode === 'file'
+            ? 'Upload a ZIP file of your project.'
+            : 'Paste any public GitHub repository URL.'} We'll analyze the structure, detect concepts, and create a personalized learning path.
         </p>
       </div>
     </div>

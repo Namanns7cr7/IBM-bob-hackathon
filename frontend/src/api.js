@@ -32,6 +32,16 @@ export const analyzeRepo = async (repoId, skillLevel, goal) => {
   return response.data;
 };
 
+export const analyzeGitHubUrl = async (githubUrl, skillLevel, goal) => {
+  const response = await api.post('/analyze-github-url', {
+    github_url: githubUrl,
+    skill_level: skillLevel,
+    goal: goal,
+  });
+  
+  return response.data;
+};
+
 export const debugError = async (repoId, errorLog, skillLevel) => {
   const response = await api.post('/debug', {
     repo_id: repoId,
